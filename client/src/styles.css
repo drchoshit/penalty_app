@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  height: 100%;
+}
+
+body {
+  @apply bg-brand-ivory text-brand-ink;
+  font-feature-settings: "ss01" 1, "cv01" 1;
+}
+
+/* Layout helpers */
+.container-max {
+  @apply mx-auto w-full max-w-6xl px-4;
+}
+
+/* Surfaces */
+.card {
+  @apply rounded-2xl bg-white border border-brand-gold2 shadow-soft;
+}
+
+.card-header {
+  @apply flex items-center justify-between border-b border-brand-gold2 px-5 py-4;
+}
+
+.card-title {
+  @apply text-base font-semibold text-brand-green;
+  letter-spacing: 0.01em;
+}
+
+.card-subtitle {
+  @apply text-xs text-slate-600;
+}
+
+/* Inputs */
+.input {
+  @apply w-full rounded-xl border border-brand-gold2 bg-white px-3 py-2 text-sm
+         outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold;
+}
+
+.select {
+  @apply w-full rounded-xl border border-brand-gold2 bg-white px-3 py-2 text-sm
+         outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold;
+}
+
+.textarea {
+  @apply w-full rounded-xl border border-brand-gold2 bg-white px-3 py-2 text-sm
+         outline-none focus:ring-2 focus:ring-brand-gold focus:border-brand-gold;
+}
+
+/* Buttons */
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium
+         border border-brand-gold2 bg-white text-brand-green
+         hover:bg-brand-ivory active:scale-[0.99] transition;
+}
+
+.btn-primary {
+  @apply bg-brand-green text-brand-ivory border-brand-green hover:bg-brand-green2;
+}
+
+.btn-gold {
+  @apply bg-brand-gold text-brand-green border-brand-gold hover:bg-brand-gold2;
+}
+
+.btn-danger {
+  @apply border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100;
+}
+
+/* Badges */
+.badge {
+  @apply inline-flex items-center rounded-full border border-brand-gold2 bg-brand-ivory
+         px-2 py-0.5 text-xs text-brand-green;
+}
+
+.badge-warn {
+  @apply border-brand-gold bg-brand-gold2 text-brand-green;
+}
+
+.badge-danger {
+  @apply border-rose-300 bg-rose-100 text-rose-700;
+}
+
+/* Tables */
+.table {
+  @apply w-full text-sm;
+}
+
+.table th {
+  @apply text-left font-semibold text-brand-green py-2;
+}
+
+.table td {
+  @apply py-2 border-t border-brand-gold2 align-top;
+}
+
+.table tr:hover td {
+  @apply bg-brand-ivory;
+}
+
+/* Page header */
+.topbar {
+  @apply sticky top-0 z-20 border-b border-brand-gold2;
+  background: linear-gradient(180deg, #1f4d3a 0%, #193f31 100%);
+}
+
+.topbar-inner {
+  @apply container-max flex items-center justify-between py-3;
+}
+
+.brandmark {
+  @apply text-brand-ivory font-semibold tracking-wide;
+}
+
+.navlink {
+  @apply rounded-xl px-3 py-2 text-sm text-brand-ivory/80 hover:text-brand-ivory hover:bg-white/10 transition;
+}
+
+.navlink-active {
+  @apply text-brand-ivory bg-white/10;
+  box-shadow: inset 0 0 0 1px rgba(230, 207, 155, 0.35);
+}

@@ -1,0 +1,10 @@
+{
+  "name": "penalty-app-monorepo",
+  "private": true,
+  "scripts": {
+    "setup": "npm --prefix server i && npm --prefix client i",
+    "dev": "npm --prefix server run dev",
+    "build": "npm --prefix client run build && npm --prefix server run build",
+    "start": "npm --prefix server start"
+  }
+}
