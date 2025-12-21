@@ -377,18 +377,43 @@ app.get("/api/summary/cumulative", (req, res) => {
 
 /* SMS */
 app.post("/api/sms/send", async (req, res) => {
+  // 1) 요청 검증은 기존 그대로
   const parsed = SmsSendSchema.safeParse(req.body);
   if (!parsed.success) return bad(res, "문자 발송 데이터가 올바르지 않습니다.", parsed.error.issues);
 
-  const client = makeSmsClient();
-  if (!client) return bad(res, "COOLSMS_API_KEY/SECRET 환경변수가 설정되지 않았습니다.");
+  // 2) makeSmsClient / env / sender 획득 과정에서 예외가 나도 JSON으로 떨어지게 보호
+  let client;
+  try {
+    client = makeSmsClient();
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      message: "SMS 클라이언트 초기화 실패(sms.js/패키지/환경변수 확인).",
+      detail: String(e?.message || e)
+    });
+  }
+  if (!client) {
+    return res.status(500).json({
+      ok: false,
+      message: "COOLSMS_API_KEY/SECRET 환경변수가 설정되지 않았습니다.",
+      detail: ["COOLSMS_API_KEY", "COOLSMS_API_SECRET"]
+    });
+  }
 
-  const sender = normalizePhone(process.env.COOLSMS_SENDER_PHONE);
-  if (!sender) return bad(res, "COOLSMS_SENDER_PHONE 환경변수가 필요합니다.");
+  // 기존 이름(COOLSMS_SENDER_PHONE)을 유지하되, 호환용으로 COOLSMS_SENDER도 같이 허용
+  const sender = normalizePhone(process.env.COOLSMS_SENDER_PHONE || process.env.COOLSMS_SENDER);
+  if (!sender) {
+    return res.status(500).json({
+      ok: false,
+      message: "발신번호 환경변수가 필요합니다.",
+      detail: ["COOLSMS_SENDER_PHONE (기존)", "COOLSMS_SENDER (호환)"]
+    });
+  }
 
   const { student_id, target, message } = parsed.data;
+
   const s = db.prepare("SELECT * FROM students WHERE id=?").get(student_id);
-  if (!s) return bad(res, "학생을 찾을 수 없습니다.");
+  if (!s) return res.status(404).json({ ok: false, message: "학생을 찾을 수 없습니다." });
 
   const tos = [];
   if (target === "student" || target === "both") {
@@ -403,15 +428,25 @@ app.post("/api/sms/send", async (req, res) => {
   const uniqueTos = [...new Set(tos)];
   if (uniqueTos.length === 0) return bad(res, "수신번호가 없습니다(학생/보호자 전화번호 확인).");
 
+  // 3) 전송은 기존 로직(수신자별 sendOne) 유지하되, 타임아웃/에러 디테일을 JSON으로 반환
   try {
     const results = [];
     for (const to of uniqueTos) {
-      const r = await sendSms({ client, to, from: sender, text: message });
+      const r = await Promise.race([
+        sendSms({ client, to, from: sender, text: message }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("SMS timeout")), 12000))
+      ]);
       results.push(r);
     }
     ok(res, { sent: uniqueTos.length, results });
   } catch (e) {
-    return res.status(500).json({ ok: false, message: "문자 발송 실패", detail: String(e?.message || e) });
+    // solapi/axios 류 에러는 response/data가 붙어오는 경우가 많아서 같이 내려줌
+    const detail = {
+      message: String(e?.message || e),
+      response: e?.response ?? null,
+      data: e?.response?.data ?? e?.data ?? null
+    };
+    return res.status(500).json({ ok: false, message: "문자 발송 실패", detail });
   }
 });
 
