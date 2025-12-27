@@ -33,7 +33,7 @@ export const ThresholdSchema = z.object({
   id: z.string().min(1),
   min_points: z.number().int(),
   label: z.string().min(1),
-  message_template: z.string().min(1),
+  message_template: z.string().optional().nullable().default(""),
   sort_order: z.number().int().optional()
 });
 
