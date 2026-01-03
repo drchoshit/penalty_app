@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 
 const links = [
   { to: "/", label: "학생 DB" },
@@ -10,6 +11,23 @@ const links = [
 ];
 
 export default function Layout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // 로그인 가드
+  useEffect(() => {
+    const isAdmin = localStorage.getItem("medipenalty_admin") === "true";
+    if (!isAdmin) {
+      navigate("/admin", { replace: true });
+    }
+  }, [navigate, location.pathname]);
+
+  // 로그아웃
+  const handleLogout = () => {
+    localStorage.removeItem("medipenalty_admin");
+    navigate("/admin", { replace: true });
+  };
+
   return (
     <div className="min-h-screen">
       <header className="topbar">
@@ -21,20 +39,30 @@ export default function Layout() {
             </div>
           </div>
 
-          <nav className="flex flex-wrap items-center gap-1">
-            {links.map((l) => (
-              <NavLink
-                key={l.to}
-                to={l.to}
-                className={({ isActive }) =>
-                  isActive ? "navlink navlink-active" : "navlink"
-                }
-                end={l.to === "/"}
-              >
-                {l.label}
-              </NavLink>
-            ))}
-          </nav>
+          <div className="flex items-center gap-3">
+            <nav className="flex flex-wrap items-center gap-1">
+              {links.map((l) => (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  className={({ isActive }) =>
+                    isActive ? "navlink navlink-active" : "navlink"
+                  }
+                  end={l.to === "/"}
+                >
+                  {l.label}
+                </NavLink>
+              ))}
+            </nav>
+
+            {/* 로그아웃 버튼 */}
+            <button
+              onClick={handleLogout}
+              className="text-xs px-3 py-1 rounded bg-slate-700 text-white hover:bg-slate-600"
+            >
+              로그아웃
+            </button>
+          </div>
         </div>
       </header>
 

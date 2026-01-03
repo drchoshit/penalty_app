@@ -6,10 +6,15 @@ import AssignPage from "./pages/AssignPage";
 import SettingsPage from "./pages/SettingsPage";
 import SmsPage from "./pages/SmsPage";
 import NotesPage from "./pages/NotesPage";
+import AdminLogin from "./pages/AdminLogin";
 
 export default function App() {
   return (
     <Routes>
+      {/* 관리자 로그인 */}
+      <Route path="/admin" element={<AdminLogin />} />
+
+      {/* 로그인 필요 영역 */}
       <Route element={<Layout />}>
         <Route path="/" element={<StudentsPage />} />
         <Route path="/records" element={<RecordsPage />} />
