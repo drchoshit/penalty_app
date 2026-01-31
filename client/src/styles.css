@@ -108,6 +108,75 @@ body {
   @apply text-center align-middle;
 }
 
+/* Print */
+.print-only {
+  display: none;
+}
+
+.print-sheet {
+  color: #111;
+}
+
+.print-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.print-list {
+  column-count: 2;
+  column-gap: 16px;
+}
+
+.print-row {
+  break-inside: avoid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.print-name {
+  font-weight: 600;
+}
+
+.print-points {
+  text-align: right;
+  min-width: 44px;
+}
+
+.print-empty {
+  font-size: 11px;
+  color: #666;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html, body {
+    background: #fff !important;
+  }
+
+  header.topbar,
+  footer {
+    display: none !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+}
+
 /* Page header */
 .topbar {
   @apply sticky top-0 z-20 border-b border-brand-gold2;
