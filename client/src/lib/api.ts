@@ -40,6 +40,15 @@ export type Note = {
   content: string;
 };
 
+export type ExportAll = {
+  exported_at: string;
+  students: Student[];
+  rules: Rule[];
+  thresholds: Threshold[];
+  penalties: Penalty[];
+  penalties_by_student: { student: Student; penalties: Penalty[] }[];
+};
+
 type ApiResp<T> = { ok: true; data: T } | { ok: false; message: string; detail?: any };
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
@@ -121,5 +130,6 @@ export const api = {
   sms: {
     send: (student_id: string, target: "student" | "parent" | "both", message: string) =>
       req<any>("/api/sms/send", { method: "POST", body: JSON.stringify({ student_id, target, message }) })
-  }
+  },
+  exportAll: () => req<ExportAll>("/api/export/all")
 };

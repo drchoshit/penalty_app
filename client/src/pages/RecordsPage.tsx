@@ -54,9 +54,37 @@ export default function RecordsPage() {
     alert(`삭제됨: ${r.deleted}건`);
   }
 
+  async function downloadAll() {
+    setErr(null);
+    try {
+      const data = await api.exportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `penalty-export-${todayYmd()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setErr(e.message || "전체 다운로드 실패");
+    }
+  }
+
   return (
     <div className="grid grid-cols-12 gap-4">
       {err && <div className="col-span-12 card p-4 border border-rose-100 bg-rose-50 text-rose-700 text-sm">{err}</div>}
+
+      <div className="col-span-12 card p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold">전체 데이터 다운로드</div>
+            <div className="text-sm text-slate-500 mt-1">학생 DB, 벌점 기록, 규칙, 기준치를 한 번에 내려받습니다.</div>
+          </div>
+          <button className="btn btn-gold" onClick={downloadAll}>전체 다운로드</button>
+        </div>
+      </div>
 
       <div className="col-span-4 card p-5">
         <div className="text-base font-semibold">학생</div>

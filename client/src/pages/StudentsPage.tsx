@@ -114,7 +114,7 @@ export default function StudentsPage() {
           <div className="text-sm text-slate-500">불러오는 중...</div>
         ) : (
           <div className="overflow-auto">
-            <table className="table min-w-[800px]">
+            <table className="table table-center min-w-[800px]">
               <thead>
                 <tr>
                   <th>ID</th>
@@ -134,7 +134,7 @@ export default function StudentsPage() {
                     <td className="text-slate-600">{r.student_phone}</td>
                     <td className="text-slate-600">{r.parent_phone}</td>
                     <td>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 justify-center">
                         <button
                           className="btn"
                           onClick={() => {

@@ -314,6 +314,34 @@ app.post("/api/penalties/reset", (req, res) => {
   ok(res, { deleted: info.changes });
 });
 
+/* Export */
+app.get("/api/export/all", (req, res) => {
+  const students = db.prepare("SELECT * FROM students ORDER BY name COLLATE NOCASE").all();
+  const rules = db.prepare("SELECT * FROM rules ORDER BY sort_order ASC, title COLLATE NOCASE ASC").all();
+  const thresholds = db.prepare("SELECT * FROM thresholds ORDER BY sort_order ASC, min_points ASC").all();
+  const penalties = db.prepare("SELECT * FROM penalties ORDER BY occurred_on DESC, created_at DESC").all();
+
+  const penaltyMap = new Map();
+  for (const p of penalties) {
+    if (!penaltyMap.has(p.student_id)) penaltyMap.set(p.student_id, []);
+    penaltyMap.get(p.student_id).push(p);
+  }
+
+  const penalties_by_student = students.map((s) => ({
+    student: s,
+    penalties: penaltyMap.get(s.id) || []
+  }));
+
+  ok(res, {
+    exported_at: new Date().toISOString(),
+    students,
+    rules,
+    thresholds,
+    penalties,
+    penalties_by_student
+  });
+});
+
 /* Notes */
 app.get("/api/notes", (req, res) => {
   const { studentId } = req.query;

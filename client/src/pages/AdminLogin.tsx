@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 const ADMIN_ID = "medicalsoap";
-const ADMIN_PW = "ghfkdskql2827";
+const ADMIN_PW = "WkddkdmlRna1611";
 
 export default function AdminLogin() {
   const [id, setId] = useState("");
