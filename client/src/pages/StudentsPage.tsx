@@ -7,7 +7,8 @@ function emptyStudent(): Student {
 }
 
 export default function StudentsPage() {
-  const showStudentAddDeleteButtons = false;
+  const showStudentAddButtons = false;
+  const showStudentDeleteButtons = true;
   const [rows, setRows] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export default function StudentsPage() {
                 }}
               />
             </label>
-            {showStudentAddDeleteButtons ? (
+            {showStudentAddButtons ? (
               <button
                 className="btn btn-primary"
                 onClick={() => {
@@ -148,7 +149,7 @@ export default function StudentsPage() {
                         >
                           수정
                         </button>
-                        {showStudentAddDeleteButtons ? (
+                        {showStudentDeleteButtons ? (
                           <button className="btn btn-danger" onClick={() => remove(r.id)}>
                             삭제
                           </button>
