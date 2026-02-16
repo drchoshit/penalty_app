@@ -7,6 +7,7 @@ function emptyStudent(): Student {
 }
 
 export default function StudentsPage() {
+  const showStudentAddDeleteButtons = false;
   const [rows, setRows] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -93,16 +94,18 @@ export default function StudentsPage() {
                 }}
               />
             </label>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                setErr(null);
-                setEditing(emptyStudent());
-                setEditOpen(true);
-              }}
-            >
-              신규 학생
-            </button>
+            {showStudentAddDeleteButtons ? (
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setErr(null);
+                  setEditing(emptyStudent());
+                  setEditOpen(true);
+                }}
+              >
+                신규 학생
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -145,9 +148,11 @@ export default function StudentsPage() {
                         >
                           수정
                         </button>
-                        <button className="btn btn-danger" onClick={() => remove(r.id)}>
-                          삭제
-                        </button>
+                        {showStudentAddDeleteButtons ? (
+                          <button className="btn btn-danger" onClick={() => remove(r.id)}>
+                            삭제
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
