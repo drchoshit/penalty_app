@@ -11,7 +11,6 @@ import {
   StudentSchema,
   RuleSchema,
   PenaltyCreateSchema,
-  ResetSchema,
   ThresholdSchema,
   NoteSchema,
   SmsSendSchema
@@ -120,6 +119,15 @@ app.put("/api/students/:id", (req, res) => {
 });
 
 app.delete("/api/students/:id", (req, res) => {
+  const exists = db
+    .prepare("SELECT COUNT(1) AS cnt FROM penalties WHERE student_id=?")
+    .get(req.params.id);
+  if (Number(exists?.cnt || 0) > 0) {
+    return res.status(403).json({
+      ok: false,
+      message: "벌점 기록이 있는 학생은 삭제할 수 없습니다. 기록 보존 정책이 적용되었습니다."
+    });
+  }
   db.prepare("DELETE FROM students WHERE id=?").run(req.params.id);
   ok(res, true);
 });
@@ -265,6 +273,35 @@ app.get("/api/penalties", (req, res) => {
   ok(res, rows);
 });
 
+app.get("/api/penalties/range-students", (req, res) => {
+  const { from, to } = req.query;
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (typeof from !== "string" || typeof to !== "string" || !ymd.test(from) || !ymd.test(to)) {
+    return bad(res, "기간 형식이 올바르지 않습니다. YYYY-MM-DD");
+  }
+  if (from > to) return bad(res, "기간 설정이 올바르지 않습니다. from <= to");
+
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        s.id AS student_id,
+        s.name AS name,
+        s.grade AS grade,
+        COUNT(p.id) AS penalty_count,
+        IFNULL(SUM(p.points), 0) AS points_sum
+      FROM penalties p
+      JOIN students s ON s.id = p.student_id
+      WHERE p.occurred_on BETWEEN ? AND ?
+      GROUP BY s.id, s.name, s.grade
+      ORDER BY s.name COLLATE NOCASE ASC
+      `
+    )
+    .all(from, to);
+
+  ok(res, rows);
+});
+
 app.post("/api/penalties", (req, res) => {
   const parsed = PenaltyCreateSchema.safeParse(req.body);
   if (!parsed.success) return bad(res, "벌점 데이터가 올바르지 않습니다.", parsed.error.issues);
@@ -293,25 +330,17 @@ app.post("/api/penalties", (req, res) => {
 });
 
 app.delete("/api/penalties/:id", (req, res) => {
-  db.prepare("DELETE FROM penalties WHERE id=?").run(req.params.id);
-  ok(res, true);
+  return res.status(403).json({
+    ok: false,
+    message: "벌점 기록 삭제 기능은 비활성화되었습니다."
+  });
 });
 
 app.post("/api/penalties/reset", (req, res) => {
-  const parsed = ResetSchema.safeParse(req.body);
-  if (!parsed.success) return bad(res, "리셋 조건이 올바르지 않습니다.", parsed.error.issues);
-
-  const { student_id, from, to } = parsed.data;
-  const info = db
-    .prepare(
-      `
-    DELETE FROM penalties
-    WHERE student_id=? AND occurred_on BETWEEN ? AND ?
-  `
-    )
-    .run(student_id, from, to);
-
-  ok(res, { deleted: info.changes });
+  return res.status(403).json({
+    ok: false,
+    message: "벌점 기록 삭제 기능은 비활성화되었습니다."
+  });
 });
 
 /* Export */
@@ -389,17 +418,28 @@ app.delete("/api/notes/:id", (req, res) => {
 
 /* Summary */
 app.get("/api/summary/cumulative", (req, res) => {
+  const { from, to } = req.query;
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  const hasFrom = typeof from === "string" && from.length > 0;
+  const hasTo = typeof to === "string" && to.length > 0;
+  if (hasFrom !== hasTo) return bad(res, "기간 조회는 from/to를 함께 입력해야 합니다.");
+  if (hasFrom && hasTo) {
+    if (!ymd.test(from) || !ymd.test(to)) return bad(res, "기간 형식이 올바르지 않습니다. YYYY-MM-DD");
+    if (from > to) return bad(res, "기간 설정이 올바르지 않습니다. from <= to");
+  }
+
+  const joinRange = hasFrom && hasTo ? "AND p.occurred_on BETWEEN @from AND @to" : "";
   const rows = db
     .prepare(
       `
     SELECT s.*, IFNULL(SUM(p.points),0) AS points
     FROM students s
-    LEFT JOIN penalties p ON p.student_id = s.id
+    LEFT JOIN penalties p ON p.student_id = s.id ${joinRange}
     GROUP BY s.id
     ORDER BY s.name COLLATE NOCASE
   `
     )
-    .all();
+    .all({ from: hasFrom ? from : null, to: hasTo ? to : null });
   ok(res, rows);
 });
 

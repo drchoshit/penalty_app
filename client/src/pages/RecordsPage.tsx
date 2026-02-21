@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, Penalty, Student } from "../lib/api";
+import { api, Penalty, PenaltyRangeStudent, Student } from "../lib/api";
 import DatePicker from "../components/DatePicker";
 import { todayYmd } from "../lib/date";
 
@@ -9,9 +9,13 @@ export default function RecordsPage() {
   const [penalties, setPenalties] = useState<Penalty[]>([]);
   const [from, setFrom] = useState<string>(() => todayYmd());
   const [to, setTo] = useState<string>(() => todayYmd());
+  const [printFrom, setPrintFrom] = useState<string>(() => todayYmd());
+  const [printTo, setPrintTo] = useState<string>(() => todayYmd());
   const [err, setErr] = useState<string | null>(null);
   const [printRows, setPrintRows] = useState<(Student & { points: number })[]>([]);
   const [printReady, setPrintReady] = useState(false);
+  const [rangeStudents, setRangeStudents] = useState<PenaltyRangeStudent[]>([]);
+  const [rangeMode, setRangeMode] = useState(false);
 
   const cumulative = useMemo(() => {
     const sum = penalties.reduce((a, p) => a + (p.points || 0), 0);
@@ -24,8 +28,8 @@ export default function RecordsPage() {
     if (s.length && !selected) setSelected(s[0].id);
   }
 
-  async function loadPenalties(studentId: string) {
-    const list = await api.penalties.list(studentId);
+  async function loadPenalties(studentId: string, fromDate?: string, toDate?: string) {
+    const list = await api.penalties.list(studentId, fromDate, toDate);
     setPenalties(list);
   }
 
@@ -35,8 +39,9 @@ export default function RecordsPage() {
 
   useEffect(() => {
     if (!selected) return;
-    loadPenalties(selected).catch((e) => setErr(e.message || "불러오기 실패"));
-  }, [selected]);
+    const load = rangeMode ? loadPenalties(selected, from, to) : loadPenalties(selected);
+    load.catch((e) => setErr(e.message || "불러오기 실패"));
+  }, [selected, rangeMode]);
 
   useEffect(() => {
     const handleAfterPrint = () => setPrintReady(false);
@@ -44,22 +49,30 @@ export default function RecordsPage() {
     return () => window.removeEventListener("afterprint", handleAfterPrint);
   }, []);
 
-  async function removePenalty(id: string) {
-    if (!confirm("이 벌점을 삭제할까요?")) return;
-    await api.penalties.remove(id);
-    await loadPenalties(selected);
-  }
-
-  async function resetRange() {
-    if (!selected) return;
+  async function checkRange() {
+    setErr(null);
     if (from > to) {
       setErr("기간 설정이 올바르지 않습니다. from <= to");
       return;
     }
-    if (!confirm(`${from} ~ ${to} 기간 벌점을 전부 삭제(리셋)할까요?`)) return;
-    const r = await api.penalties.reset(selected, from, to);
-    await loadPenalties(selected);
-    alert(`삭제됨: ${r.deleted}건`);
+    const rows = await api.penalties.studentsByRange(from, to);
+    setRangeStudents(rows);
+    setRangeMode(true);
+
+    if (rows.length === 0) {
+      setPenalties([]);
+      return;
+    }
+
+    const target = rows.some((r) => r.student_id === selected) ? selected : rows[0].student_id;
+    setSelected(target);
+    await loadPenalties(target, from, to);
+  }
+
+  async function openRangeStudent(studentId: string) {
+    setRangeMode(true);
+    setSelected(studentId);
+    await loadPenalties(studentId, from, to);
   }
 
   function last4Digits(phone?: string | null) {
@@ -79,7 +92,7 @@ export default function RecordsPage() {
     const d = new Date();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
-    return `${mm}/${dd} 메디컬 로드맵 주간 벌점 현황`;
+    return `${mm}/${dd} 메디컬 로드맵 주간 벌점 현황 (${printFrom} ~ ${printTo})`;
   }
 
   async function downloadAll() {
@@ -102,8 +115,12 @@ export default function RecordsPage() {
 
   async function printAll() {
     setErr(null);
+    if (printFrom > printTo) {
+      setErr("프린트 기간 설정이 올바르지 않습니다. from <= to");
+      return;
+    }
     try {
-      const list = await api.summary.cumulative();
+      const list = await api.summary.cumulative(printFrom, printTo);
       setPrintRows(list);
       setPrintReady(true);
       setTimeout(() => window.print(), 100);
@@ -123,7 +140,15 @@ export default function RecordsPage() {
               <div className="text-base font-semibold">전체 데이터 다운로드</div>
               <div className="text-sm text-slate-500 mt-1">학생 DB, 벌점 기록, 규칙, 기준치를 한 번에 내려받습니다.</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-2">
+              <div className="w-[140px]">
+                <div className="text-xs text-slate-500 mb-1">From</div>
+                <DatePicker value={printFrom} onChange={setPrintFrom} />
+              </div>
+              <div className="w-[140px]">
+                <div className="text-xs text-slate-500 mb-1">To</div>
+                <DatePicker value={printTo} onChange={setPrintTo} />
+              </div>
               <button className="btn" onClick={printAll}>A4 프린트</button>
               <button className="btn btn-gold" onClick={downloadAll}>전체 다운로드</button>
             </div>
@@ -142,7 +167,11 @@ export default function RecordsPage() {
                   "w-full text-left px-3 py-2 rounded-xl border text-sm",
                   selected === s.id ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200 hover:bg-slate-50"
                 ].join(" ")}
-                onClick={() => setSelected(s.id)}
+                onClick={() => {
+                  setRangeMode(false);
+                  setRangeStudents([]);
+                  setSelected(s.id);
+                }}
               >
                 <div className="flex items-center justify-between">
                   <span>{s.name}</span>
@@ -170,9 +199,31 @@ export default function RecordsPage() {
                   <div className="text-xs text-slate-500 mb-1">To</div>
                   <DatePicker value={to} onChange={setTo} />
                 </div>
-                <button className="btn btn-danger" onClick={resetRange}>기간 리셋</button>
+                <button className="btn btn-gold" onClick={checkRange}>벌점 확인</button>
               </div>
             </div>
+            {rangeMode && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <div className="text-xs text-slate-500 mb-2">기간 내 기록 학생</div>
+                <div className="flex flex-wrap gap-2">
+                  {rangeStudents.map((s) => (
+                    <button
+                      key={s.student_id}
+                      className={[
+                        "px-3 py-1 rounded-xl border text-sm",
+                        selected === s.student_id ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200 hover:bg-slate-50"
+                      ].join(" ")}
+                      onClick={() => openRangeStudent(s.student_id)}
+                    >
+                      {s.name} ({s.penalty_count}건 / {s.points_sum}점)
+                    </button>
+                  ))}
+                  {rangeStudents.length === 0 && (
+                    <div className="text-sm text-slate-500">선택한 기간에 기록된 벌점이 없습니다.</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="card p-5">
@@ -184,7 +235,6 @@ export default function RecordsPage() {
                     <th>항목</th>
                     <th>점수</th>
                     <th>메모</th>
-                    <th className="w-[120px]">작업</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -194,14 +244,11 @@ export default function RecordsPage() {
                       <td>{p.rule_title}</td>
                       <td>{p.points}</td>
                       <td className="text-slate-600">{p.memo}</td>
-                      <td>
-                        <button className="btn btn-danger" onClick={() => removePenalty(p.id)}>삭제</button>
-                      </td>
                     </tr>
                   ))}
                   {penalties.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="text-sm text-slate-500 py-10 text-center">벌점 내역이 없습니다.</td>
+                      <td colSpan={4} className="text-sm text-slate-500 py-10 text-center">벌점 내역이 없습니다.</td>
                     </tr>
                   )}
                 </tbody>
@@ -214,6 +261,7 @@ export default function RecordsPage() {
       <div className="print-only">
         <div className="print-sheet">
           <div className="print-title">{printTitle()}</div>
+          <div className="print-period">기간: {printFrom} ~ {printTo}</div>
           {printReady && printRows.length > 0 ? (
             <div className="print-list">
               {printRows.map((s) => (

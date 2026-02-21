@@ -25,6 +25,14 @@ export type Penalty = {
   created_at: string;
 };
 
+export type PenaltyRangeStudent = {
+  student_id: string;
+  name: string;
+  grade?: string | null;
+  penalty_count: number;
+  points_sum: number;
+};
+
 export type Threshold = {
   id: string;
   min_points: number;
@@ -113,14 +121,19 @@ export const api = {
       const qs = new URLSearchParams({ studentId, ...(from ? { from } : {}), ...(to ? { to } : {}) });
       return req<Penalty[]>(`/api/penalties?${qs.toString()}`);
     },
+    studentsByRange: (from: string, to: string) => {
+      const qs = new URLSearchParams({ from, to });
+      return req<PenaltyRangeStudent[]>(`/api/penalties/range-students?${qs.toString()}`);
+    },
     create: (p: { student_id: string; rule_id: string; occurred_on: string; memo?: string | null }) =>
-      req<{ id: string }>("/api/penalties", { method: "POST", body: JSON.stringify(p) }),
-    remove: (id: string) => req<boolean>(`/api/penalties/${id}`, { method: "DELETE" }),
-    reset: (student_id: string, from: string, to: string) =>
-      req<{ deleted: number }>("/api/penalties/reset", { method: "POST", body: JSON.stringify({ student_id, from, to }) })
+      req<{ id: string }>("/api/penalties", { method: "POST", body: JSON.stringify(p) })
   },
   summary: {
-    cumulative: () => req<(Student & { points: number })[]>("/api/summary/cumulative")
+    cumulative: (from?: string, to?: string) => {
+      const qs = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) });
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return req<(Student & { points: number })[]>(`/api/summary/cumulative${suffix}`);
+    }
   },
   notes: {
     list: (studentId: string) => req<Note[]>(`/api/notes?${new URLSearchParams({ studentId }).toString()}`),
