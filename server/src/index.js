@@ -119,16 +119,20 @@ app.put("/api/students/:id", (req, res) => {
 });
 
 app.delete("/api/students/:id", (req, res) => {
-  const exists = db
-    .prepare("SELECT COUNT(1) AS cnt FROM penalties WHERE student_id=?")
-    .get(req.params.id);
-  if (Number(exists?.cnt || 0) > 0) {
-    return res.status(403).json({
-      ok: false,
-      message: "벌점 기록이 있는 학생은 삭제할 수 없습니다. 기록 보존 정책이 적용되었습니다."
-    });
+  const studentId = String(req.params.id || "").trim();
+  if (!studentId) return bad(res, "학생 ID가 필요합니다.");
+  // 벌점 기록 유무와 무관하게 관리자 삭제를 허용합니다.
+  const tx = db.transaction((id) => {
+    // foreign key가 비활성화된 환경에서도 관련 데이터를 함께 삭제
+    db.prepare("DELETE FROM penalties WHERE student_id=?").run(id);
+    db.prepare("DELETE FROM notes WHERE student_id=?").run(id);
+    return db.prepare("DELETE FROM students WHERE id=?").run(id);
+  });
+
+  const deleted = tx(studentId);
+  if (!Number(deleted?.changes || 0)) {
+    return res.status(404).json({ ok: false, message: "학생을 찾을 수 없습니다." });
   }
-  db.prepare("DELETE FROM students WHERE id=?").run(req.params.id);
   ok(res, true);
 });
 
@@ -330,10 +334,15 @@ app.post("/api/penalties", (req, res) => {
 });
 
 app.delete("/api/penalties/:id", (req, res) => {
-  return res.status(403).json({
-    ok: false,
-    message: "벌점 기록 삭제 기능은 비활성화되었습니다."
-  });
+  const penaltyId = String(req.params.id || "").trim();
+  if (!penaltyId) return bad(res, "record id is required");
+
+  const deleted = db.prepare("DELETE FROM penalties WHERE id=?").run(penaltyId);
+  if (!Number(deleted?.changes || 0)) {
+    return res.status(404).json({ ok: false, message: "record not found" });
+  }
+
+  ok(res, true);
 });
 
 app.post("/api/penalties/reset", (req, res) => {

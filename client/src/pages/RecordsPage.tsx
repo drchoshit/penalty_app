@@ -16,6 +16,7 @@ export default function RecordsPage() {
   const [printReady, setPrintReady] = useState(false);
   const [rangeStudents, setRangeStudents] = useState<PenaltyRangeStudent[]>([]);
   const [rangeMode, setRangeMode] = useState(false);
+  const [deletingPenaltyId, setDeletingPenaltyId] = useState<string | null>(null);
 
   const cumulative = useMemo(() => {
     const sum = penalties.reduce((a, p) => a + (p.points || 0), 0);
@@ -73,6 +74,37 @@ export default function RecordsPage() {
     setRangeMode(true);
     setSelected(studentId);
     await loadPenalties(studentId, from, to);
+  }
+
+  async function removePenalty(penalty: Penalty) {
+    if (!confirm("선택한 항목을 삭제할까요?")) return;
+    setErr(null);
+    setDeletingPenaltyId(penalty.id);
+    try {
+      await api.penalties.remove(penalty.id);
+      if (!selected) {
+        setPenalties((prev) => prev.filter((p) => p.id !== penalty.id));
+        return;
+      }
+
+      if (rangeMode) {
+        const rows = await api.penalties.studentsByRange(from, to);
+        setRangeStudents(rows);
+        const target = rows.some((r) => r.student_id === selected) ? selected : rows[0]?.student_id;
+        if (!target) {
+          setPenalties([]);
+          return;
+        }
+        if (target !== selected) setSelected(target);
+        await loadPenalties(target, from, to);
+      } else {
+        await loadPenalties(selected);
+      }
+    } catch (e: any) {
+      setErr(e.message || "삭제 실패");
+    } finally {
+      setDeletingPenaltyId(null);
+    }
   }
 
   function last4Digits(phone?: string | null) {
@@ -235,6 +267,7 @@ export default function RecordsPage() {
                     <th>항목</th>
                     <th>점수</th>
                     <th>메모</th>
+                    <th className="w-[100px]">삭제</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -244,11 +277,20 @@ export default function RecordsPage() {
                       <td>{p.rule_title}</td>
                       <td>{p.points}</td>
                       <td className="text-slate-600">{p.memo}</td>
+                      <td>
+                        <button
+                          className="btn btn-danger"
+                          disabled={deletingPenaltyId === p.id}
+                          onClick={() => removePenalty(p)}
+                        >
+                          {deletingPenaltyId === p.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {penalties.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="text-sm text-slate-500 py-10 text-center">벌점 내역이 없습니다.</td>
+                      <td colSpan={5} className="text-sm text-slate-500 py-10 text-center">벌점 내역이 없습니다.</td>
                     </tr>
                   )}
                 </tbody>

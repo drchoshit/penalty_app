@@ -126,7 +126,8 @@ export const api = {
       return req<PenaltyRangeStudent[]>(`/api/penalties/range-students?${qs.toString()}`);
     },
     create: (p: { student_id: string; rule_id: string; occurred_on: string; memo?: string | null }) =>
-      req<{ id: string }>("/api/penalties", { method: "POST", body: JSON.stringify(p) })
+      req<{ id: string }>("/api/penalties", { method: "POST", body: JSON.stringify(p) }),
+    remove: (id: string) => req<boolean>(`/api/penalties/${id}`, { method: "DELETE" })
   },
   summary: {
     cumulative: (from?: string, to?: string) => {
