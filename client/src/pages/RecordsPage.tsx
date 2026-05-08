@@ -67,14 +67,6 @@ export default function RecordsPage() {
     setInfo(`From 날짜를 ${from}로 고정했습니다.`);
   }
 
-  function unfixFromDate() {
-    const today = todayYmd();
-    localStorage.removeItem(FIXED_RECORD_FROM_KEY);
-    setFromFixed(false);
-    setFromValue(today);
-    setInfo(`From 날짜 고정을 해제하고 오늘 날짜(${today})로 변경했습니다.`);
-  }
-
   useEffect(() => {
     loadStudents().catch((e) => setErr(e.message || "불러오기 실패"));
   }, []);
@@ -358,12 +350,11 @@ export default function RecordsPage() {
                   <div className="text-xs text-slate-500 mb-1">From</div>
                   <DatePicker value={from} onChange={changeFrom} />
                 </div>
+                <button className={fromFixed ? "btn btn-primary" : "btn"} onClick={fixFromDate}>날짜 고정</button>
                 <div className="w-[140px]">
                   <div className="text-xs text-slate-500 mb-1">To</div>
                   <DatePicker value={to} onChange={setTo} />
                 </div>
-                <button className={fromFixed ? "btn btn-primary" : "btn"} onClick={fixFromDate}>날짜 고정</button>
-                <button className="btn" onClick={unfixFromDate}>고정 취소</button>
                 <button className="btn btn-gold" onClick={checkRange}>벌점 확인</button>
               </div>
             </div>
