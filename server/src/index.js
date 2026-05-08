@@ -58,6 +58,25 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }
 });
+const ymd = /^\d{4}-\d{2}-\d{2}$/;
+const ym = /^\d{4}-\d{2}$/;
+
+function validateDateRange(res, from, to) {
+  if (typeof from !== "string" || typeof to !== "string" || !ymd.test(from) || !ymd.test(to)) {
+    bad(res, "기간 형식이 올바르지 않습니다. YYYY-MM-DD");
+    return false;
+  }
+  if (from > to) {
+    bad(res, "기간 설정이 올바르지 않습니다. from <= to");
+    return false;
+  }
+  return true;
+}
+
+function normalizeStudentIds(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((id) => String(id || "").trim()).filter(Boolean))];
+}
 
 /* Health */
 app.get("/api/health", (req, res) => ok(res, { status: "ok" }));
@@ -125,6 +144,7 @@ app.delete("/api/students/:id", (req, res) => {
   const tx = db.transaction((id) => {
     // foreign key가 비활성화된 환경에서도 관련 데이터를 함께 삭제
     db.prepare("DELETE FROM penalties WHERE student_id=?").run(id);
+    db.prepare("DELETE FROM penalty_reset_items WHERE student_id=?").run(id);
     db.prepare("DELETE FROM notes WHERE student_id=?").run(id);
     return db.prepare("DELETE FROM students WHERE id=?").run(id);
   });
@@ -279,11 +299,7 @@ app.get("/api/penalties", (req, res) => {
 
 app.get("/api/penalties/range-students", (req, res) => {
   const { from, to } = req.query;
-  const ymd = /^\d{4}-\d{2}-\d{2}$/;
-  if (typeof from !== "string" || typeof to !== "string" || !ymd.test(from) || !ymd.test(to)) {
-    return bad(res, "기간 형식이 올바르지 않습니다. YYYY-MM-DD");
-  }
-  if (from > to) return bad(res, "기간 설정이 올바르지 않습니다. from <= to");
+  if (!validateDateRange(res, from, to)) return;
 
   const rows = db
     .prepare(
@@ -302,6 +318,33 @@ app.get("/api/penalties/range-students", (req, res) => {
       `
     )
     .all(from, to);
+
+  ok(res, rows);
+});
+
+app.get("/api/penalties/reset-candidates", (req, res) => {
+  const { from, to } = req.query;
+  if (!validateDateRange(res, from, to)) return;
+
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        s.id AS student_id,
+        s.name AS name,
+        s.grade AS grade,
+        COUNT(p.id) AS penalty_count,
+        IFNULL(SUM(p.points), 0) AS points_sum
+      FROM students s
+      LEFT JOIN penalties p
+        ON p.student_id = s.id
+       AND p.occurred_on BETWEEN @from AND @to
+       AND p.points != 0
+      GROUP BY s.id, s.name, s.grade
+      ORDER BY s.name COLLATE NOCASE ASC
+      `
+    )
+    .all({ from, to });
 
   ok(res, rows);
 });
@@ -346,10 +389,192 @@ app.delete("/api/penalties/:id", (req, res) => {
 });
 
 app.post("/api/penalties/reset", (req, res) => {
-  return res.status(403).json({
-    ok: false,
-    message: "벌점 기록 삭제 기능은 비활성화되었습니다."
+  const { from, to } = req.body || {};
+  if (!validateDateRange(res, from, to)) return;
+
+  const studentIds = normalizeStudentIds(req.body?.student_ids);
+  if (!studentIds.length) return bad(res, "리셋할 학생을 선택하세요.");
+
+  const placeholders = studentIds.map(() => "?").join(",");
+  const resetId = uid("reset");
+
+  const tx = db.transaction(() => {
+    const targets = db
+      .prepare(
+        `
+        SELECT id, student_id, points, occurred_on, rule_title, memo
+        FROM penalties
+        WHERE student_id IN (${placeholders})
+          AND occurred_on BETWEEN ? AND ?
+          AND points != 0
+        ORDER BY occurred_on ASC, created_at ASC
+        `
+      )
+      .all(...studentIds, from, to);
+
+    const insertItem = db.prepare(
+      `
+      INSERT INTO penalty_reset_items
+        (id, reset_id, penalty_id, student_id, original_points, occurred_on, rule_title, memo)
+      VALUES
+        (@id, @reset_id, @penalty_id, @student_id, @original_points, @occurred_on, @rule_title, @memo)
+      `
+    );
+    for (const p of targets) {
+      insertItem.run({
+        id: uid("reset_item"),
+        reset_id: resetId,
+        penalty_id: p.id,
+        student_id: p.student_id,
+        original_points: Number(p.points || 0),
+        occurred_on: p.occurred_on,
+        rule_title: p.rule_title || null,
+        memo: p.memo || null
+      });
+    }
+
+    const pointsSum = targets.reduce((acc, p) => acc + Number(p.points || 0), 0);
+    db.prepare(
+      `
+      INSERT INTO penalty_reset_events
+        (id, from_date, to_date, student_count, record_count, points_sum)
+      VALUES
+        (@id, @from_date, @to_date, @student_count, @record_count, @points_sum)
+      `
+    ).run({
+      id: resetId,
+      from_date: from,
+      to_date: to,
+      student_count: studentIds.length,
+      record_count: targets.length,
+      points_sum: pointsSum
+    });
+
+    if (targets.length) {
+      const recordPlaceholders = targets.map(() => "?").join(",");
+      db.prepare(`UPDATE penalties SET points=0 WHERE id IN (${recordPlaceholders})`).run(...targets.map((p) => p.id));
+    }
+
+    return { reset_id: resetId, student_count: studentIds.length, record_count: targets.length, points_sum: pointsSum };
   });
+
+  ok(res, tx());
+});
+
+app.get("/api/penalties/monthly-history", (req, res) => {
+  const fromMonth = typeof req.query.fromMonth === "string" ? req.query.fromMonth : "";
+  const toMonth = typeof req.query.toMonth === "string" ? req.query.toMonth : "";
+  if ((fromMonth && !ym.test(fromMonth)) || (toMonth && !ym.test(toMonth))) {
+    return bad(res, "월 형식이 올바르지 않습니다. YYYY-MM");
+  }
+  if (fromMonth && toMonth && fromMonth > toMonth) {
+    return bad(res, "월 설정이 올바르지 않습니다. fromMonth <= toMonth");
+  }
+
+  const params = {
+    fromMonth: fromMonth || "0000-01",
+    toMonth: toMonth || "9999-12"
+  };
+  const students = db.prepare("SELECT id, name, grade FROM students").all();
+  const studentsById = new Map(students.map((s) => [s.id, s]));
+  const rowsByKey = new Map();
+
+  function ensureRow(studentId, month) {
+    const student = studentsById.get(studentId);
+    if (!student || !month) return null;
+    const key = `${month}::${studentId}`;
+    if (!rowsByKey.has(key)) {
+      rowsByKey.set(key, {
+        month,
+        student_id: student.id,
+        name: student.name,
+        grade: student.grade,
+        penalty_points: 0,
+        bonus_points: 0,
+        net_points: 0,
+        active_points: 0,
+        reset_preserved_points: 0,
+        record_count: 0,
+        reset_record_count: 0
+      });
+    }
+    return rowsByKey.get(key);
+  }
+
+  const activeRows = db
+    .prepare(
+      `
+      SELECT
+        student_id,
+        substr(occurred_on, 1, 7) AS month,
+        SUM(CASE WHEN points > 0 THEN points ELSE 0 END) AS penalty_points,
+        SUM(CASE WHEN points < 0 THEN ABS(points) ELSE 0 END) AS bonus_points,
+        SUM(points) AS active_points,
+        COUNT(id) AS record_count
+      FROM penalties
+      WHERE substr(occurred_on, 1, 7) BETWEEN @fromMonth AND @toMonth
+      GROUP BY student_id, substr(occurred_on, 1, 7)
+      `
+    )
+    .all(params);
+
+  for (const r of activeRows) {
+    const row = ensureRow(r.student_id, r.month);
+    if (!row) continue;
+    row.penalty_points += Number(r.penalty_points || 0);
+    row.bonus_points += Number(r.bonus_points || 0);
+    row.net_points += Number(r.active_points || 0);
+    row.active_points += Number(r.active_points || 0);
+    row.record_count += Number(r.record_count || 0);
+  }
+
+  const resetRows = db
+    .prepare(
+      `
+      SELECT
+        student_id,
+        substr(occurred_on, 1, 7) AS month,
+        SUM(CASE WHEN original_points > 0 THEN original_points ELSE 0 END) AS penalty_points,
+        SUM(CASE WHEN original_points < 0 THEN ABS(original_points) ELSE 0 END) AS bonus_points,
+        SUM(original_points) AS reset_points,
+        COUNT(id) AS reset_record_count
+      FROM penalty_reset_items
+      WHERE substr(occurred_on, 1, 7) BETWEEN @fromMonth AND @toMonth
+      GROUP BY student_id, substr(occurred_on, 1, 7)
+      `
+    )
+    .all(params);
+
+  for (const r of resetRows) {
+    const row = ensureRow(r.student_id, r.month);
+    if (!row) continue;
+    row.penalty_points += Number(r.penalty_points || 0);
+    row.bonus_points += Number(r.bonus_points || 0);
+    row.net_points += Number(r.reset_points || 0);
+    row.reset_preserved_points += Number(r.reset_points || 0);
+    row.reset_record_count += Number(r.reset_record_count || 0);
+  }
+
+  const rows = [...rowsByKey.values()].sort((a, b) => {
+    if (a.month !== b.month) return a.month < b.month ? 1 : -1;
+    return String(a.name || "").localeCompare(String(b.name || ""), "ko");
+  });
+
+  ok(res, rows);
+});
+
+app.get("/api/penalties/reset-events", (req, res) => {
+  const rows = db
+    .prepare(
+      `
+      SELECT *
+      FROM penalty_reset_events
+      ORDER BY created_at DESC, from_date DESC
+      LIMIT 100
+      `
+    )
+    .all();
+  ok(res, rows);
 });
 
 /* Export */
@@ -358,6 +583,8 @@ app.get("/api/export/all", (req, res) => {
   const rules = db.prepare("SELECT * FROM rules ORDER BY sort_order ASC, title COLLATE NOCASE ASC").all();
   const thresholds = db.prepare("SELECT * FROM thresholds ORDER BY sort_order ASC, min_points ASC").all();
   const penalties = db.prepare("SELECT * FROM penalties ORDER BY occurred_on DESC, created_at DESC").all();
+  const penalty_reset_events = db.prepare("SELECT * FROM penalty_reset_events ORDER BY created_at DESC").all();
+  const penalty_reset_items = db.prepare("SELECT * FROM penalty_reset_items ORDER BY occurred_on DESC, created_at DESC").all();
 
   const penaltyMap = new Map();
   for (const p of penalties) {
@@ -376,6 +603,8 @@ app.get("/api/export/all", (req, res) => {
     rules,
     thresholds,
     penalties,
+    penalty_reset_events,
+    penalty_reset_items,
     penalties_by_student
   });
 });

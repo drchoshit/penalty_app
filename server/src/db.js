@@ -42,6 +42,34 @@ export function openDb(dbPath) {
       FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS penalty_reset_events (
+      id TEXT PRIMARY KEY,
+      from_date TEXT NOT NULL,
+      to_date TEXT NOT NULL,
+      student_count INTEGER NOT NULL DEFAULT 0,
+      record_count INTEGER NOT NULL DEFAULT 0,
+      points_sum INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS penalty_reset_items (
+      id TEXT PRIMARY KEY,
+      reset_id TEXT NOT NULL,
+      penalty_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      original_points INTEGER NOT NULL,
+      occurred_on TEXT NOT NULL,
+      rule_title TEXT,
+      memo TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_penalty_reset_items_student_month
+      ON penalty_reset_items(student_id, occurred_on);
+
+    CREATE INDEX IF NOT EXISTS idx_penalty_reset_items_reset
+      ON penalty_reset_items(reset_id);
+
     CREATE TABLE IF NOT EXISTS thresholds (
       id TEXT PRIMARY KEY,
       min_points INTEGER NOT NULL,

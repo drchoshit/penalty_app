@@ -33,6 +33,39 @@ export type PenaltyRangeStudent = {
   points_sum: number;
 };
 
+export type PenaltyResetCandidate = PenaltyRangeStudent;
+
+export type PenaltyResetResult = {
+  reset_id: string;
+  student_count: number;
+  record_count: number;
+  points_sum: number;
+};
+
+export type PenaltyMonthlyHistory = {
+  month: string;
+  student_id: string;
+  name: string;
+  grade?: string | null;
+  penalty_points: number;
+  bonus_points: number;
+  net_points: number;
+  active_points: number;
+  reset_preserved_points: number;
+  record_count: number;
+  reset_record_count: number;
+};
+
+export type PenaltyResetEvent = {
+  id: string;
+  from_date: string;
+  to_date: string;
+  student_count: number;
+  record_count: number;
+  points_sum: number;
+  created_at: string;
+};
+
 export type Threshold = {
   id: string;
   min_points: number;
@@ -54,6 +87,8 @@ export type ExportAll = {
   rules: Rule[];
   thresholds: Threshold[];
   penalties: Penalty[];
+  penalty_reset_events?: PenaltyResetEvent[];
+  penalty_reset_items?: any[];
   penalties_by_student: { student: Student; penalties: Penalty[] }[];
 };
 
@@ -78,13 +113,12 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(`API JSON 파싱 실패: ${r.status} ${r.statusText} (${url})\n응답: ${raw.slice(0, 200)}`);
   }
 
-if (j === null) {
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-  // Some endpoints may return 204; treat as null.
-  return null as any as T;
-}
-if (!j.ok) {
-
+  if (j === null) {
+    if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
+    // Some endpoints may return 204; treat as null.
+    return null as any as T;
+  }
+  if (!j.ok) {
     const detail = j.detail ? `\n상세: ${JSON.stringify(j.detail).slice(0, 400)}` : "";
     throw new Error(`${j.message}${detail}`);
   }
@@ -125,6 +159,18 @@ export const api = {
       const qs = new URLSearchParams({ from, to });
       return req<PenaltyRangeStudent[]>(`/api/penalties/range-students?${qs.toString()}`);
     },
+    resetCandidates: (from: string, to: string) => {
+      const qs = new URLSearchParams({ from, to });
+      return req<PenaltyResetCandidate[]>(`/api/penalties/reset-candidates?${qs.toString()}`);
+    },
+    reset: (from: string, to: string, student_ids: string[]) =>
+      req<PenaltyResetResult>("/api/penalties/reset", { method: "POST", body: JSON.stringify({ from, to, student_ids }) }),
+    monthlyHistory: (fromMonth?: string, toMonth?: string) => {
+      const qs = new URLSearchParams({ ...(fromMonth ? { fromMonth } : {}), ...(toMonth ? { toMonth } : {}) });
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return req<PenaltyMonthlyHistory[]>(`/api/penalties/monthly-history${suffix}`);
+    },
+    resetEvents: () => req<PenaltyResetEvent[]>("/api/penalties/reset-events"),
     create: (p: { student_id: string; rule_id: string; occurred_on: string; memo?: string | null }) =>
       req<{ id: string }>("/api/penalties", { method: "POST", body: JSON.stringify(p) }),
     remove: (id: string) => req<boolean>(`/api/penalties/${id}`, { method: "DELETE" })

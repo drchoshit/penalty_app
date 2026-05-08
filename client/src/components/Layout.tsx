@@ -4,6 +4,7 @@ import { useEffect } from "react";
 const links = [
   { to: "/", label: "학생 DB" },
   { to: "/records", label: "벌점 기록" },
+  { to: "/penalty-history", label: "벌점 누적기록" },
   { to: "/assign", label: "벌점 부여" },
   { to: "/settings", label: "설정" },
   { to: "/sms", label: "문자" },

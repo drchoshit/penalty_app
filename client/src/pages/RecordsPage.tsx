@@ -1,27 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, Penalty, PenaltyRangeStudent, Student } from "../lib/api";
+import { api, Penalty, PenaltyRangeStudent, PenaltyResetCandidate, Student } from "../lib/api";
 import DatePicker from "../components/DatePicker";
+import { Modal } from "../components/Modal";
 import { todayYmd } from "../lib/date";
+
+const FIXED_RECORD_FROM_KEY = "medipenalty_records_from_fixed";
+
+function getFixedRecordFrom() {
+  return localStorage.getItem(FIXED_RECORD_FROM_KEY);
+}
+
+function monthDay(value: string) {
+  const [, m, d] = value.split("-");
+  return `${Number(m || 0)}/${Number(d || 0)}`;
+}
 
 export default function RecordsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [penalties, setPenalties] = useState<Penalty[]>([]);
-  const [from, setFrom] = useState<string>(() => todayYmd());
+  const [from, setFromValue] = useState<string>(() => getFixedRecordFrom() || todayYmd());
+  const [fromFixed, setFromFixed] = useState<boolean>(() => Boolean(getFixedRecordFrom()));
   const [to, setTo] = useState<string>(() => todayYmd());
   const [printFrom, setPrintFrom] = useState<string>(() => todayYmd());
   const [printTo, setPrintTo] = useState<string>(() => todayYmd());
+  const [resetFrom, setResetFrom] = useState<string>(() => todayYmd());
+  const [resetTo, setResetTo] = useState<string>(() => todayYmd());
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [printRows, setPrintRows] = useState<(Student & { points: number })[]>([]);
   const [printReady, setPrintReady] = useState(false);
   const [rangeStudents, setRangeStudents] = useState<PenaltyRangeStudent[]>([]);
   const [rangeMode, setRangeMode] = useState(false);
   const [deletingPenaltyId, setDeletingPenaltyId] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetCandidates, setResetCandidates] = useState<PenaltyResetCandidate[]>([]);
+  const [resetSelected, setResetSelected] = useState<string[]>([]);
+  const [resetBusy, setResetBusy] = useState(false);
 
   const cumulative = useMemo(() => {
     const sum = penalties.reduce((a, p) => a + (p.points || 0), 0);
     return sum;
   }, [penalties]);
+  const resetSelectedSet = useMemo(() => new Set(resetSelected), [resetSelected]);
+  const resetRangeLabel = useMemo(() => `${monthDay(resetFrom)}~${monthDay(resetTo)}`, [resetFrom, resetTo]);
 
   async function loadStudents() {
     const s = await api.students.list();
@@ -32,6 +54,25 @@ export default function RecordsPage() {
   async function loadPenalties(studentId: string, fromDate?: string, toDate?: string) {
     const list = await api.penalties.list(studentId, fromDate, toDate);
     setPenalties(list);
+  }
+
+  function changeFrom(value: string) {
+    setFromValue(value);
+    if (fromFixed) localStorage.setItem(FIXED_RECORD_FROM_KEY, value);
+  }
+
+  function fixFromDate() {
+    localStorage.setItem(FIXED_RECORD_FROM_KEY, from);
+    setFromFixed(true);
+    setInfo(`From 날짜를 ${from}로 고정했습니다.`);
+  }
+
+  function unfixFromDate() {
+    const today = todayYmd();
+    localStorage.removeItem(FIXED_RECORD_FROM_KEY);
+    setFromFixed(false);
+    setFromValue(today);
+    setInfo(`From 날짜 고정을 해제하고 오늘 날짜(${today})로 변경했습니다.`);
   }
 
   useEffect(() => {
@@ -52,6 +93,7 @@ export default function RecordsPage() {
 
   async function checkRange() {
     setErr(null);
+    setInfo(null);
     if (from > to) {
       setErr("기간 설정이 올바르지 않습니다. from <= to");
       return;
@@ -79,6 +121,7 @@ export default function RecordsPage() {
   async function removePenalty(penalty: Penalty) {
     if (!confirm("선택한 항목을 삭제할까요?")) return;
     setErr(null);
+    setInfo(null);
     setDeletingPenaltyId(penalty.id);
     try {
       await api.penalties.remove(penalty.id);
@@ -129,6 +172,7 @@ export default function RecordsPage() {
 
   async function downloadAll() {
     setErr(null);
+    setInfo(null);
     try {
       const data = await api.exportAll();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
@@ -147,6 +191,7 @@ export default function RecordsPage() {
 
   async function printAll() {
     setErr(null);
+    setInfo(null);
     if (printFrom > printTo) {
       setErr("프린트 기간 설정이 올바르지 않습니다. from <= to");
       return;
@@ -161,10 +206,76 @@ export default function RecordsPage() {
     }
   }
 
+  async function refreshAfterReset() {
+    if (!selected) return;
+    if (rangeMode) {
+      const rows = await api.penalties.studentsByRange(from, to);
+      setRangeStudents(rows);
+      await loadPenalties(selected, from, to);
+      return;
+    }
+    await loadPenalties(selected);
+  }
+
+  async function openResetSelector() {
+    setErr(null);
+    setInfo(null);
+    if (resetFrom > resetTo) {
+      setErr("리셋 기간 설정이 올바르지 않습니다. from <= to");
+      return;
+    }
+
+    try {
+      const rows = await api.penalties.resetCandidates(resetFrom, resetTo);
+      setResetCandidates(rows);
+      setResetSelected(rows.filter((r) => Number(r.penalty_count || 0) > 0).map((r) => r.student_id));
+      setResetOpen(true);
+    } catch (e: any) {
+      setErr(e.message || "리셋 대상 불러오기 실패");
+    }
+  }
+
+  function toggleResetStudent(studentId: string) {
+    setResetSelected((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
+  }
+
+  async function runReset() {
+    setErr(null);
+    setInfo(null);
+    if (!resetSelected.length) {
+      setErr("리셋할 학생을 선택하세요.");
+      return;
+    }
+    if (
+      !confirm(
+        `${resetRangeLabel} 기간의 선택 학생 ${resetSelected.length}명 상점/벌점을 0점으로 변경합니다.\n리셋 전 점수는 벌점 누적기록에 보존됩니다.\n실행할까요?`
+      )
+    ) {
+      return;
+    }
+
+    setResetBusy(true);
+    try {
+      const result = await api.penalties.reset(resetFrom, resetTo, resetSelected);
+      setResetOpen(false);
+      await refreshAfterReset();
+      setInfo(
+        `${resetRangeLabel} 기간 리셋 완료: ${result.student_count}명 선택, ${result.record_count}건을 0점 처리했습니다.`
+      );
+    } catch (e: any) {
+      setErr(e.message || "벌점 리셋 실패");
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="no-print grid grid-cols-12 gap-4">
         {err && <div className="col-span-12 card p-4 border border-rose-100 bg-rose-50 text-rose-700 text-sm">{err}</div>}
+        {info && <div className="col-span-12 card p-4 border border-emerald-100 bg-emerald-50 text-emerald-700 text-sm">{info}</div>}
 
         <div className="col-span-12 card p-5">
           <div className="flex items-center justify-between gap-3">
@@ -183,6 +294,26 @@ export default function RecordsPage() {
               </div>
               <button className="btn" onClick={printAll}>A4 프린트</button>
               <button className="btn btn-gold" onClick={downloadAll}>전체 다운로드</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="col-span-12 card p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-base font-semibold">기간별 벌점 리셋</div>
+              <div className="text-sm text-slate-500 mt-1">선택 기간({resetRangeLabel})의 상점과 벌점을 0점으로 변경하고, 리셋 전 점수는 누적기록에 보존합니다.</div>
+            </div>
+            <div className="flex items-end gap-2">
+              <div className="w-[140px]">
+                <div className="text-xs text-slate-500 mb-1">From</div>
+                <DatePicker value={resetFrom} onChange={setResetFrom} />
+              </div>
+              <div className="w-[140px]">
+                <div className="text-xs text-slate-500 mb-1">To</div>
+                <DatePicker value={resetTo} onChange={setResetTo} />
+              </div>
+              <button className="btn btn-danger" onClick={openResetSelector}>벌점 리셋</button>
             </div>
           </div>
         </div>
@@ -222,18 +353,23 @@ export default function RecordsPage() {
                 <div className="text-base font-semibold">벌점 내역</div>
                 <div className="text-sm text-slate-500 mt-1">총합(현재 화면에 보이는 전체): {cumulative}점</div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-end gap-2">
                 <div className="w-[140px]">
                   <div className="text-xs text-slate-500 mb-1">From</div>
-                  <DatePicker value={from} onChange={setFrom} />
+                  <DatePicker value={from} onChange={changeFrom} />
                 </div>
                 <div className="w-[140px]">
                   <div className="text-xs text-slate-500 mb-1">To</div>
                   <DatePicker value={to} onChange={setTo} />
                 </div>
+                <button className={fromFixed ? "btn btn-primary" : "btn"} onClick={fixFromDate}>날짜 고정</button>
+                <button className="btn" onClick={unfixFromDate}>고정 취소</button>
                 <button className="btn btn-gold" onClick={checkRange}>벌점 확인</button>
               </div>
             </div>
+            {fromFixed && (
+              <div className="mt-3 text-xs text-brand-green">From 날짜가 {from}로 고정되어 있습니다.</div>
+            )}
             {rangeMode && (
               <div className="mt-4 border-t border-slate-100 pt-4">
                 <div className="text-xs text-slate-500 mb-2">기간 내 기록 학생</div>
@@ -299,6 +435,54 @@ export default function RecordsPage() {
           </div>
         </div>
       </div>
+
+      <Modal open={resetOpen} title={`벌점 리셋 (${resetRangeLabel})`} onClose={() => !resetBusy && setResetOpen(false)}>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            선택한 학생의 {resetRangeLabel} 기간 기록만 0점으로 변경됩니다. 리셋 전 점수는 누적기록 페이지에 남습니다.
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm text-slate-600">선택 학생: {resetSelected.length}명</div>
+            <div className="flex gap-2">
+              <button className="btn" onClick={() => setResetSelected(resetCandidates.map((s) => s.student_id))}>전체 선택</button>
+              <button className="btn" onClick={() => setResetSelected([])}>전체 선택 해제</button>
+            </div>
+          </div>
+
+          <div className="max-h-[360px] overflow-auto rounded-xl border border-slate-100">
+            {resetCandidates.map((s) => (
+              <label key={s.student_id} className="flex cursor-pointer items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0 hover:bg-brand-ivory">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={resetSelectedSet.has(s.student_id)}
+                    onChange={() => toggleResetStudent(s.student_id)}
+                  />
+                  <div>
+                    <div className="text-sm font-medium">{s.name}</div>
+                    <div className="text-xs text-slate-500">{s.grade || ""}</div>
+                  </div>
+                </div>
+                <div className="text-right text-xs text-slate-600">
+                  <div>{s.penalty_count}건</div>
+                  <div>{s.points_sum}점</div>
+                </div>
+              </label>
+            ))}
+            {resetCandidates.length === 0 && (
+              <div className="px-3 py-10 text-center text-sm text-slate-500">학생이 없습니다.</div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button className="btn" disabled={resetBusy} onClick={() => setResetOpen(false)}>취소</button>
+            <button className="btn btn-danger" disabled={resetBusy || resetSelected.length === 0} onClick={runReset}>
+              {resetBusy ? "리셋 중..." : "선택 학생 리셋"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <div className="print-only">
         <div className="print-sheet">
