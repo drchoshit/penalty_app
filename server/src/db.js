@@ -127,6 +127,16 @@ export function openDb(dbPath) {
     tx(defaults);
   }
 
+  db.prepare(
+    `
+    DELETE FROM penalties
+    WHERE id IN (
+      SELECT penalty_id
+      FROM penalty_reset_items
+    )
+    `
+  ).run();
+
   return db;
 }
 

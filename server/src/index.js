@@ -339,7 +339,6 @@ app.get("/api/penalties/reset-candidates", (req, res) => {
       LEFT JOIN penalties p
         ON p.student_id = s.id
        AND p.occurred_on BETWEEN @from AND @to
-       AND p.points != 0
       GROUP BY s.id, s.name, s.grade
       ORDER BY s.name COLLATE NOCASE ASC
       `
@@ -406,7 +405,6 @@ app.post("/api/penalties/reset", (req, res) => {
         FROM penalties
         WHERE student_id IN (${placeholders})
           AND occurred_on BETWEEN ? AND ?
-          AND points != 0
         ORDER BY occurred_on ASC, created_at ASC
         `
       )
@@ -420,7 +418,7 @@ app.post("/api/penalties/reset", (req, res) => {
         (@id, @reset_id, @penalty_id, @student_id, @original_points, @occurred_on, @rule_title, @memo)
       `
     );
-    for (const p of targets) {
+    for (const p of targets.filter((row) => Number(row.points || 0) !== 0)) {
       insertItem.run({
         id: uid("reset_item"),
         reset_id: resetId,
@@ -452,7 +450,7 @@ app.post("/api/penalties/reset", (req, res) => {
 
     if (targets.length) {
       const recordPlaceholders = targets.map(() => "?").join(",");
-      db.prepare(`UPDATE penalties SET points=0 WHERE id IN (${recordPlaceholders})`).run(...targets.map((p) => p.id));
+      db.prepare(`DELETE FROM penalties WHERE id IN (${recordPlaceholders})`).run(...targets.map((p) => p.id));
     }
 
     return { reset_id: resetId, student_count: studentIds.length, record_count: targets.length, points_sum: pointsSum };
@@ -582,7 +580,41 @@ app.get("/api/export/all", (req, res) => {
   const students = db.prepare("SELECT * FROM students ORDER BY name COLLATE NOCASE").all();
   const rules = db.prepare("SELECT * FROM rules ORDER BY sort_order ASC, title COLLATE NOCASE ASC").all();
   const thresholds = db.prepare("SELECT * FROM thresholds ORDER BY sort_order ASC, min_points ASC").all();
-  const penalties = db.prepare("SELECT * FROM penalties ORDER BY occurred_on DESC, created_at DESC").all();
+  const activePenalties = db
+    .prepare(
+      `
+      SELECT p.*
+      FROM penalties p
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM penalty_reset_items ri
+        WHERE ri.penalty_id = p.id
+      )
+      ORDER BY p.occurred_on DESC, p.created_at DESC
+      `
+    )
+    .all();
+  const resetPreservedPenalties = db
+    .prepare(
+      `
+      SELECT
+        penalty_id AS id,
+        student_id,
+        'reset_preserved' AS rule_id,
+        IFNULL(rule_title, '리셋 전 기록') AS rule_title,
+        original_points AS points,
+        occurred_on,
+        memo,
+        created_at
+      FROM penalty_reset_items
+      ORDER BY occurred_on DESC, created_at DESC
+      `
+    )
+    .all();
+  const penalties = [...activePenalties, ...resetPreservedPenalties].sort((a, b) => {
+    if (a.occurred_on !== b.occurred_on) return a.occurred_on < b.occurred_on ? 1 : -1;
+    return String(a.created_at || "").localeCompare(String(b.created_at || "")) * -1;
+  });
   const penalty_reset_events = db.prepare("SELECT * FROM penalty_reset_events ORDER BY created_at DESC").all();
   const penalty_reset_items = db.prepare("SELECT * FROM penalty_reset_items ORDER BY occurred_on DESC, created_at DESC").all();
 

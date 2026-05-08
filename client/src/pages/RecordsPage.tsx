@@ -242,7 +242,7 @@ export default function RecordsPage() {
     }
     if (
       !confirm(
-        `${resetRangeLabel} 기간의 선택 학생 ${resetSelected.length}명 상점/벌점을 0점으로 변경합니다.\n리셋 전 점수는 벌점 누적기록에 보존됩니다.\n실행할까요?`
+        `${resetRangeLabel} 기간의 선택 학생 ${resetSelected.length}명 상점/벌점 항목을 삭제합니다.\n리셋 전 점수는 벌점 누적기록에 보존됩니다.\n실행할까요?`
       )
     ) {
       return;
@@ -254,7 +254,7 @@ export default function RecordsPage() {
       setResetOpen(false);
       await refreshAfterReset();
       setInfo(
-        `${resetRangeLabel} 기간 리셋 완료: ${result.student_count}명 선택, ${result.record_count}건을 0점 처리했습니다.`
+        `${resetRangeLabel} 기간 리셋 완료: ${result.student_count}명 선택, ${result.record_count}건을 삭제했습니다.`
       );
     } catch (e: any) {
       setErr(e.message || "벌점 리셋 실패");
@@ -294,7 +294,7 @@ export default function RecordsPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-base font-semibold">기간별 벌점 리셋</div>
-              <div className="text-sm text-slate-500 mt-1">선택 기간({resetRangeLabel})의 상점과 벌점을 0점으로 변경하고, 리셋 전 점수는 누적기록에 보존합니다.</div>
+              <div className="text-sm text-slate-500 mt-1">선택 기간({resetRangeLabel})의 상점과 벌점 항목을 삭제하고, 리셋 전 점수는 누적기록에 보존합니다.</div>
             </div>
             <div className="flex items-end gap-2">
               <div className="w-[140px]">
@@ -430,7 +430,7 @@ export default function RecordsPage() {
       <Modal open={resetOpen} title={`벌점 리셋 (${resetRangeLabel})`} onClose={() => !resetBusy && setResetOpen(false)}>
         <div className="space-y-4">
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            선택한 학생의 {resetRangeLabel} 기간 기록만 0점으로 변경됩니다. 리셋 전 점수는 누적기록 페이지에 남습니다.
+            선택한 학생의 {resetRangeLabel} 기간 기록이 학생별 벌점 내역에서 삭제됩니다. 리셋 전 점수는 누적기록 페이지에 남습니다.
           </div>
 
           <div className="flex items-center justify-between gap-2">
