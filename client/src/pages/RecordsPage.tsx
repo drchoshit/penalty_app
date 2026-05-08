@@ -343,7 +343,7 @@ export default function RecordsPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-base font-semibold">벌점 내역</div>
-                <div className="text-sm text-slate-500 mt-1">총합(현재 화면에 보이는 전체): {cumulative}점</div>
+                <div className="text-sm text-slate-500 mt-1">총합(현재 전체): {cumulative}점</div>
               </div>
               <div className="flex flex-wrap items-end gap-2">
                 <div className="w-[140px]">
