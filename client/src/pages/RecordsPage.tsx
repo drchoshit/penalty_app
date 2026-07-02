@@ -165,13 +165,17 @@ export default function RecordsPage() {
   async function downloadAll() {
     setErr(null);
     setInfo(null);
+    if (printFrom > printTo) {
+      setErr("다운로드 기간 설정이 올바르지 않습니다. from <= to");
+      return;
+    }
     try {
-      const data = await api.exportAll();
+      const data = await api.exportAll(printFrom, printTo);
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `penalty-export-${todayYmd()}.json`;
+      a.download = `penalty-export-${printFrom}-to-${printTo}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();

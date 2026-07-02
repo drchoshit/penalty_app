@@ -83,6 +83,7 @@ export type Note = {
 
 export type ExportAll = {
   exported_at: string;
+  export_range?: { from: string; to: string } | null;
   students: Student[];
   rules: Rule[];
   thresholds: Threshold[];
@@ -191,5 +192,9 @@ export const api = {
     send: (student_id: string, target: "student" | "parent" | "both", message: string) =>
       req<any>("/api/sms/send", { method: "POST", body: JSON.stringify({ student_id, target, message }) })
   },
-  exportAll: () => req<ExportAll>("/api/export/all")
+  exportAll: (from?: string, to?: string) => {
+    const qs = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) });
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return req<ExportAll>(`/api/export/all${suffix}`);
+  }
 };

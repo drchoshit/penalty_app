@@ -577,6 +577,18 @@ app.get("/api/penalties/reset-events", (req, res) => {
 
 /* Export */
 app.get("/api/export/all", (req, res) => {
+  const { from, to } = req.query;
+  const hasFrom = typeof from === "string" && from.length > 0;
+  const hasTo = typeof to === "string" && to.length > 0;
+  if (hasFrom !== hasTo) return bad(res, "기간 다운로드는 from/to를 함께 입력해야 합니다.");
+  if (hasFrom && hasTo && !validateDateRange(res, from, to)) return;
+
+  const rangeParams = hasFrom && hasTo ? { from, to } : {};
+  const activePenaltyRangeSql = hasFrom && hasTo ? "AND p.occurred_on BETWEEN @from AND @to" : "";
+  const resetItemRangeSql = hasFrom && hasTo ? "WHERE ri.occurred_on BETWEEN @from AND @to" : "";
+  const resetEventRangeSql = hasFrom && hasTo ? "WHERE from_date <= @to AND to_date >= @from" : "";
+  const allWithRange = (statement) => (hasFrom && hasTo ? statement.all(rangeParams) : statement.all());
+
   const students = db.prepare("SELECT * FROM students ORDER BY name COLLATE NOCASE").all();
   const rules = db.prepare("SELECT * FROM rules ORDER BY sort_order ASC, title COLLATE NOCASE ASC").all();
   const thresholds = db.prepare("SELECT * FROM thresholds ORDER BY sort_order ASC, min_points ASC").all();
@@ -590,33 +602,53 @@ app.get("/api/export/all", (req, res) => {
         FROM penalty_reset_items ri
         WHERE ri.penalty_id = p.id
       )
+      ${activePenaltyRangeSql}
       ORDER BY p.occurred_on DESC, p.created_at DESC
       `
-    )
-    .all();
+    );
+  const activePenaltyRows = allWithRange(activePenalties);
   const resetPreservedPenalties = db
     .prepare(
       `
       SELECT
-        penalty_id AS id,
-        student_id,
+        ri.penalty_id AS id,
+        ri.student_id,
         'reset_preserved' AS rule_id,
         IFNULL(rule_title, '리셋 전 기록') AS rule_title,
-        original_points AS points,
-        occurred_on,
-        memo,
-        created_at
-      FROM penalty_reset_items
+        ri.original_points AS points,
+        ri.occurred_on,
+        ri.memo,
+        ri.created_at
+      FROM penalty_reset_items ri
+      ${resetItemRangeSql}
       ORDER BY occurred_on DESC, created_at DESC
       `
-    )
-    .all();
-  const penalties = [...activePenalties, ...resetPreservedPenalties].sort((a, b) => {
+    );
+  const resetPreservedPenaltyRows = allWithRange(resetPreservedPenalties);
+  const penalties = [...activePenaltyRows, ...resetPreservedPenaltyRows].sort((a, b) => {
     if (a.occurred_on !== b.occurred_on) return a.occurred_on < b.occurred_on ? 1 : -1;
     return String(a.created_at || "").localeCompare(String(b.created_at || "")) * -1;
   });
-  const penalty_reset_events = db.prepare("SELECT * FROM penalty_reset_events ORDER BY created_at DESC").all();
-  const penalty_reset_items = db.prepare("SELECT * FROM penalty_reset_items ORDER BY occurred_on DESC, created_at DESC").all();
+  const penaltyResetEventsStmt = db
+    .prepare(
+      `
+      SELECT *
+      FROM penalty_reset_events
+      ${resetEventRangeSql}
+      ORDER BY created_at DESC
+      `
+    );
+  const penalty_reset_events = allWithRange(penaltyResetEventsStmt);
+  const penaltyResetItemsStmt = db
+    .prepare(
+      `
+      SELECT *
+      FROM penalty_reset_items ri
+      ${resetItemRangeSql}
+      ORDER BY occurred_on DESC, created_at DESC
+      `
+    );
+  const penalty_reset_items = allWithRange(penaltyResetItemsStmt);
 
   const penaltyMap = new Map();
   for (const p of penalties) {
@@ -631,6 +663,7 @@ app.get("/api/export/all", (req, res) => {
 
   ok(res, {
     exported_at: new Date().toISOString(),
+    export_range: hasFrom && hasTo ? { from, to } : null,
     students,
     rules,
     thresholds,
